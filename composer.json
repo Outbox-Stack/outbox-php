@@ -1,0 +1,44 @@
+{
+    "name": "getoutbox/outbox-php",
+    "description": "Outbox Stack PHP client for transactional email",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "email",
+        "transactional",
+        "outbox",
+        "ses"
+    ],
+    "homepage": "https://outboxstack.app/docs",
+    "require": {
+        "php": "^8.2",
+        "guzzlehttp/guzzle": "^7.8"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^11.0 || ^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Outbox\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Outbox\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "analyse": "phpstan analyse --no-progress"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "support": {
+        "issues": "https://github.com/Outbox-Stack/outbox-php/issues",
+        "source": "https://github.com/Outbox-Stack/outbox-php",
+        "docs": "https://outboxstack.app/docs"
+    }
+}
