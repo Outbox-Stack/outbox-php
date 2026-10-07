@@ -35,16 +35,60 @@ Fields match the [API](https://outboxstack.app/openapi.json): `to`, `cc`, `bcc` 
 
 Each recipient becomes its own message with its own id, status and bounce tracking. `send()` returns once the message is queued, not delivered.
 
-Also: `sendBatch($messages)` (1-100 messages; each may carry `idempotencyKey`), `getMessage($id)` and `listMessages(status: 'bounced', limit: 50)`.
+Content is either `subject` with `html` and/or `text`, or a `template` (with optional `data`). Anything else (no content, a subject without a body, or a template mixed with subject/html/text) throws `OutboxException` before any request is made.
+
+Also: `sendBatch($messages)` (1-100 messages; each may carry `idempotencyKey`) and `getMessage($id)`.
+
+## Find messages
+
+```php
+$recent = $outbox->listMessages(status: 'bounced', limit: 100);   // newest 100
+
+foreach ($outbox->iterateMessages(status: 'bounced', to: '@example.com') as $m) {
+    echo $m['id'], ' ', $m['to_email'], ' ', $m['created_at'], PHP_EOL;   // every match, a page at a time
+}
+```
+
+`listMessages()` returns one page (up to 200). `iterateMessages()` follows the cursor for you; to page by hand, call `listMessagesPage()` and pass its `next` back as `after` until it is `null`. `to` matches recipients containing the text, case-insensitively.
+
+## Cancel a message
+
+```php
+try {
+    $outbox->cancelMessage($id);
+} catch (ApiException $e) {
+    if ($e->errorCode() !== 'not_cancellable') {
+        throw $e;
+    }
+    // already sending or finished
+}
+```
+
+Only a **queued** message can be cancelled. Each recipient of a multi-recipient send has its own id. Cancelling twice succeeds, so retries are safe, and managed-sending usage for a cancelled message is refunded.
+
+## Suppressions
+
+Suppressed addresses are never sent to. Bounces, complaints and unsubscribes are added automatically; you can add your own.
+
+```php
+$outbox->addSuppression('ada@example.com');                     // reason "manual"
+foreach ($outbox->iterateSuppressions() as $s) {
+    echo $s['email'], ' ', $s['reason'], PHP_EOL;
+}
+$outbox->removeSuppression('ada@example.com');                  // manual suppressions only
+```
+
+Suppression calls need a **full-access** API key; sending keys get `forbidden`. Removing a bounce, complaint or unsubscribe gives `conflict`. `removeSuppression()` is not retried automatically: a retry after a lost response would report `not_found` for an address that was removed.
 
 ## Retries and idempotency
 
-Timeouts, connection errors, 408, 429 and 5xx are retried up to `maxRetries` times (default 2), honouring `Retry-After`. Every `send()` carries an idempotency key, generated when you don't pass one, so a retry never sends twice. Pass your own key, derived from the event that triggered the email, to stay safe across job retries too.
+Timeouts, connection errors, 408, 429, 5xx and 2xx responses with an unreadable body are retried up to `maxRetries` times (default 2), honouring `Retry-After` (seconds or an HTTP date). 4xx errors are never retried. Every `send()` carries an idempotency key, generated when you don't pass one, so a retry never sends twice. Pass your own key, derived from the event that triggered the email, to stay safe across job retries too.
 
 ## Errors
 
 ```php
 use Outbox\Exception\ApiException;
+use Outbox\Exception\ConnectionException;
 use Outbox\Exception\OutboxException;
 
 try {
@@ -53,8 +97,11 @@ try {
     $e->status();      // 422
     $e->errorCode();   // "domain_not_verified": branch on this, not the message
     $e->requestId();   // quote to support
+} catch (ConnectionException $e) {
+    $e->errorCode();       // "timeout" or "connection_error": the request may have reached us
+    $e->idempotencyKey();  // retry with this key and nothing is sent twice
 } catch (OutboxException $e) {
-    // network failure after retries, or invalid configuration
+    // invalid message or configuration
 }
 ```
 
